@@ -6,6 +6,7 @@ let package = Package(
     platforms: [.macOS("26.0")],
     products: [
         .executable(name: "hdcap", targets: ["hdcap"]),
+        .executable(name: "hdcap-companion", targets: ["HDCapCompanion"]),
         .library(name: "HDCapture", targets: ["HDCapture"]),
     ],
     dependencies: [
@@ -17,6 +18,7 @@ let package = Package(
         .executableTarget(name: "hdcap", dependencies: [
             "HDCapture", .product(name: "ArgumentParser", package: "swift-argument-parser"),
         ], plugins: [.plugin(name: "GitVersionPlugin")]),
+        .executableTarget(name: "HDCapCompanion", dependencies: ["HDCapture", "CompanionIPC"]),
         .testTarget(name: "HDCaptureTests", dependencies: ["HDCapture"]),
         .testTarget(name: "CompanionIPCTests", dependencies: ["CompanionIPC"]),
         .plugin(name: "GitVersionPlugin", capability: .buildTool()),

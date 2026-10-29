@@ -20,8 +20,24 @@ test: dev
     python3 Tests/installer.py
     python3 Tests/upgrade.py .build/debug/hdcap
 
-# Run tests and build the release binary.
-check: test build
+# Run tests and build the release binary and companion app.
+check: test build companion-bundle
+
+# Build the companion app bundle at .build/HDCap.app.
+companion-bundle: build
+    sh .github/scripts/bundle-companion.sh .build/release/hdcap-companion 0.0.0 .build/HDCap.app
+
+# Replace ~/Applications/HDCap.app with a development build, then run hdcap setup.
+companion: companion-bundle
+    #!/usr/bin/env bash
+    set -euo pipefail
+    app="$HOME/Applications/HDCap.app"
+    pkill -f "$app/Contents/MacOS/HDCap" || true
+    while pgrep -f "$app/Contents/MacOS/HDCap" > /dev/null; do sleep 0.1; done
+    mkdir -p "$HOME/Applications"
+    rm -rf "$app"
+    ditto .build/HDCap.app "$app"
+    echo "Installed $app. macOS asks for camera access again after each rebuild."
 
 # Run the optimized CLI, for example: just run devices --json.
 run *args: build
