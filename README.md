@@ -2,7 +2,7 @@
 
 HDMI and UVC capture for Apple silicon. Live preview, hardware H.264/HEVC recording, PNG screenshots, rotation and flips.
 
-Cheap dongles often expose a fast video format alongside a slow raw one. hdcap picks the fast format and keeps your chosen resolution and frame rate. JSON output and discoverable schemas make it usable by scripts and AI agents too.
+> Cheap dongles often expose a fast video format alongside a slow raw one. hdcap picks the fast format and keeps your chosen resolution and frame rate. JSON output and discoverable schemas make it usable by scripts and AI agents too.
 
 Requires macOS 26 or later. Video only.
 
