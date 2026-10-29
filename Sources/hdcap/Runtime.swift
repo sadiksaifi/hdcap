@@ -1,5 +1,4 @@
 import AppKit
-import CoreMedia
 import Foundation
 import HDCapture
 
@@ -21,39 +20,27 @@ enum Runtime {
         dispatchMain()
     }
 
-    static func start(_ engine: CaptureEngine, options: CaptureOptions, frameHandler: (@Sendable (CMSampleBuffer) -> Void)? = nil) async throws {
-        let started = ContinuousClock.now
-        let watchdog = Watchdog(seconds: options.timeout) {
-            CaptureError("capture_timeout", "The capture session did not finish starting before the timeout.")
+    static func capture<Job: CaptureJob>(_ job: Job, command: String, window: Bool = false,
+                                         text: @escaping (Job.Result) -> String) -> Never {
+        run(window: window) {
+            let host = TerminalHost()
+            defer { host.cancel() }
+            try await CaptureEngine.authorize(noInput: job.capture.noInput)
+            let result = try await job.run(host: host)
+            try Output.result(result, command: command) { text(result) }
         }
-        defer { watchdog.cancel() }
-        try await Task.detached { try engine.start(frameHandler: frameHandler) }.value
-        watchdog.cancel()
-        while !engine.statistics.firstFrameReceived {
-            if let failure = engine.failure { throw failure }
-            if ContinuousClock.now - started > .seconds(options.timeout) {
-                throw CaptureError("capture_timeout", "No video frame arrived before the timeout.")
-            }
-            try await Task.sleep(for: .milliseconds(20))
-        }
-        Output.notice("Capturing \(engine.selectedMode.device.name): \(engine.selectedMode.mode.width)x\(engine.selectedMode.mode.height) at \(engine.selectedMode.frameRate) fps.")
     }
+}
 
-    static func wait(engine: CaptureEngine, signals: SignalMonitor, duration: Double?, window: PreviewWindow? = nil,
-                     additionalFailure: (() -> CaptureError?)? = nil) async throws -> String {
-        let ready = ContinuousClock.now
-        while true {
-            if let signal = signals.received {
-                Output.notice("Stopping capture and finalizing output.")
-                return signal == SIGTERM ? "sigterm" : "sigint"
-            }
-            if window?.isClosed == true { return "window_closed" }
-            if let duration, ContinuousClock.now - ready >= .seconds(duration) { return "duration" }
-            if let failure = engine.failure { throw failure }
-            if let failure = additionalFailure?() { throw failure }
-            try await Task.sleep(for: .milliseconds(20))
-        }
-    }
+/// Runs capture jobs in this process, stopping them on SIGINT or SIGTERM.
+final class TerminalHost: CaptureHost {
+    let signals = SignalMonitor()
+
+    var stopSignal: Int32? { signals.received }
+    func allowGracefulStop() { signals.allowGracefulStop() }
+    func notice(_ text: String) { Output.notice(text) }
+    func abandon(_ error: CaptureError) -> Never { Darwin.exit(Output.error(error)) }
+    func cancel() { signals.cancel() }
 }
 
 final class SignalMonitor: @unchecked Sendable {
@@ -83,50 +70,11 @@ final class SignalMonitor: @unchecked Sendable {
                     return force
                 }
                 if force {
-                    Darwin.exit(Output.error(CaptureError("interrupted", "Capture was interrupted.", details: ["signal": String(number)])))
+                    Darwin.exit(Output.error(CaptureError.interrupted(signal: number)))
                 }
             }
             source.resume()
             sources.append(source)
         }
-    }
-}
-
-/// A blocked system API cannot be cancelled safely. Bound that wait at the process boundary.
-final class Watchdog: @unchecked Sendable {
-    private let lock = NSLock()
-    private var active = true
-    private let timer = DispatchSource.makeTimerSource(queue: .global(qos: .userInitiated))
-
-    init(seconds: Double, error: @escaping @Sendable () -> CaptureError) {
-        timer.schedule(deadline: .now() + seconds)
-        timer.setEventHandler { [weak self] in
-            guard let self, self.lock.withLock({
-                guard self.active else { return false }
-                self.active = false
-                return true
-            }) else { return }
-            Darwin.exit(Output.error(error()))
-        }
-        timer.resume()
-    }
-
-    func cancel() { lock.withLock { active = false }; timer.cancel() }
-    deinit { timer.cancel() }
-}
-
-final class ScreenshotFrame: @unchecked Sendable {
-    private let lock = NSLock()
-    private var sample: CMSampleBuffer?
-
-    func receive(_ sample: CMSampleBuffer) {
-        lock.withLock { if self.sample == nil { self.sample = sample } }
-    }
-
-    func write(to url: URL, overwrite: Bool) throws -> ScreenshotResult {
-        guard let sample = lock.withLock({ self.sample }) else {
-            throw CaptureError("capture_failed", "No screenshot frame is available.")
-        }
-        return try ScreenshotWriter.write(sampleBuffer: sample, to: url, overwrite: overwrite)
     }
 }

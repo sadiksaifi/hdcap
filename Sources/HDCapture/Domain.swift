@@ -108,7 +108,7 @@ public struct VideoTransform: Codable, Equatable, Sendable {
     }
 }
 
-public struct CaptureRequest: Sendable {
+public struct CaptureRequest: Codable, Sendable {
     public let deviceName: String?
     public let deviceID: String?
     public let resolution: Resolution

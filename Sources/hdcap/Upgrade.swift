@@ -12,7 +12,7 @@ struct Upgrade: ParsableCommand {
         let current = HDCap.configuration.version
         MainActor.assumeIsolated {
             Runtime.run {
-                let watchdog = Watchdog(seconds: 600) { CaptureError("upgrade_timeout", "Upgrade did not finish within 10 minutes.") }
+                let watchdog = Watchdog(seconds: 600) { Darwin.exit(Output.error(CaptureError("upgrade_timeout", "Upgrade did not finish within 10 minutes."))) }
                 defer { watchdog.cancel() }
                 let result = try await Task.detached { try await UpgradeInstaller.perform(current: current) }.value
                 try Output.result(result, command: "upgrade") {
