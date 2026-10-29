@@ -5,7 +5,9 @@ import HDCapture
 
 @MainActor
 enum Runtime {
-    static func run(window: Bool = false, operation: @escaping @MainActor () async throws -> Void) -> Never {
+    // Keep these entrypoints returning Void. Inferring Never through assumeIsolated
+    // lets optimized builds discard captured job storage before the task uses it.
+    static func run(window: Bool = false, operation: @escaping @MainActor () async throws -> Void) {
         if window {
             NSApplication.shared.setActivationPolicy(.regular)
         }
@@ -22,7 +24,7 @@ enum Runtime {
     }
 
     static func capture<Job: CompanionJob>(_ job: Job, command: String, window: Bool = false,
-                                           text: @escaping (Job.Result) -> String) -> Never {
+                                           text: @escaping (Job.Result) -> String) {
         let route: CaptureRoute
         do { route = try CaptureRoute.current() } catch { Darwin.exit(Output.error(error)) }
         switch route {

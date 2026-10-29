@@ -22,6 +22,7 @@ test: dev
 
 # Run tests and build the release binary and companion app.
 check: test build companion-bundle
+    python3 Tests/cli.py .build/release/hdcap
 
 # Build the companion app bundle at .build/HDCap.app.
 companion-bundle: build
