@@ -98,6 +98,9 @@ private struct ErrorEnvelope: Encodable {
 }
 
 struct OutputOptions: ParsableArguments {
+    @Flag(name: .customShort("v"), help: "Show the version (alias for --version).")
+    var version = false
+
     @Flag(help: "Print a versioned JSON result; print JSON errors to stderr.")
     var json = false
 }

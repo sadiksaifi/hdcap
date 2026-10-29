@@ -17,7 +17,13 @@ struct HDCap: ParsableCommand {
 
     @MainActor static func main() {
         do {
-            var command = try parseAsRoot()
+            // Argument Parser's built-in version flag has no configurable short name.
+            var optionsEnded = false
+            let arguments = CommandLine.arguments.dropFirst().map { argument in
+                if argument == "--" { optionsEnded = true }
+                return !optionsEnded && argument == "-v" ? "--version" : argument
+            }
+            var command = try parseAsRoot(arguments)
             do { try command.run() }
             catch { Darwin.exit(Output.error(error)) }
         } catch {

@@ -73,6 +73,16 @@ class CLIContract(unittest.TestCase):
                 self.assertTrue(result.stdout)
                 self.assertEqual(result.stderr, "")
 
+    def test_short_version_matches_long_version(self):
+        expected = self.invoke("--version").stdout
+        for args in [("-v",), ("record", "-v"), ("--json", "-v")]:
+            with self.subTest(args=args):
+                result = self.invoke(*args)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout, expected)
+                self.assertEqual(result.stderr, "")
+        self.assertNotEqual(self.invoke("--", "-v").returncode, 0)
+
 
 if __name__ == "__main__":
     unittest.main()
