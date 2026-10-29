@@ -45,6 +45,21 @@ if ! xcrun vtool -show-build "$out/stage/hdcap" | grep -Eq 'minos[[:space:]]+26\
   exit 1
 fi
 tar -czf "$out/hdcap_darwin_arm64.tar.gz" -C "$out/stage" hdcap LICENSE
+
+# hdcap setup downloads the companion separately; install.sh installs only the CLI.
+app="$out/stage/HDCap.app"
+sh .github/scripts/bundle-companion.sh .build/release/hdcap-companion "$version" "$app"
+if [ "$(plutil -extract CFBundleShortVersionString raw "$app/Contents/Info.plist")" != "$version" ]; then
+  echo "The companion app has the wrong version." >&2
+  exit 1
+fi
+if ! xcrun vtool -show-build "$app/Contents/MacOS/HDCap" | grep -Eq 'minos[[:space:]]+26\.0'; then
+  echo "The companion app must support macOS 26.0." >&2
+  exit 1
+fi
+# Leave out AppleDouble metadata, which would invalidate the bundle signature.
+COPYFILE_DISABLE=1 tar --no-mac-metadata -czf "$out/hdcap-companion_darwin_arm64.tar.gz" -C "$out/stage" HDCap.app
+
 cp install.sh "$out/install.sh"
-(cd "$out" && shasum -a 256 hdcap_darwin_arm64.tar.gz install.sh > checksums.txt)
+(cd "$out" && shasum -a 256 hdcap_darwin_arm64.tar.gz hdcap-companion_darwin_arm64.tar.gz install.sh > checksums.txt)
 rm -rf "$out/stage"

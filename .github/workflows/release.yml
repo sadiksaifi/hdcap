@@ -54,7 +54,7 @@ jobs:
           key: swift-release-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Package.swift', 'Package.resolved') }}-${{ github.sha }}
           restore-keys: |
             swift-release-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Package.swift', 'Package.resolved') }}-
-      - name: Build signed release archive and checksums
+      - name: Build signed release archives and checksums
         run: sh .github/scripts/package-release.sh "$RELEASE_TAG" "$RUNNER_TEMP/dist"
       - name: Generate release notes
         run: git-cliff --current > "$RUNNER_TEMP/release-notes.md"
@@ -64,6 +64,7 @@ jobs:
         run: |
           gh release create "$RELEASE_TAG" \
             "$RUNNER_TEMP/dist/hdcap_darwin_arm64.tar.gz" \
+            "$RUNNER_TEMP/dist/hdcap-companion_darwin_arm64.tar.gz" \
             "$RUNNER_TEMP/dist/install.sh" \
             "$RUNNER_TEMP/dist/checksums.txt" \
             --verify-tag --title "$RELEASE_TAG" --notes-file "$RUNNER_TEMP/release-notes.md"
