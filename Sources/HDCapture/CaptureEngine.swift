@@ -79,16 +79,14 @@ public final class CaptureEngine: NSObject, AVCaptureVideoDataOutputSampleBuffer
         format = device.formats[mode.index]
         nativeFrameDuration = try DeviceCatalog.supportedDuration(for: request.frameRate,
                                                                  ranges: format.videoSupportedFrameRateRanges)
-        let addsHalfTurn = request.transform.flip == .vertical || request.transform.flip == .both
-        let rotation = (request.transform.rotation + (addsHalfTurn ? 180 : 0)) % 360
         selectedMode = SelectedMode(device: DeviceInfo(device), mode: mode, frameRate: request.frameRate,
                                     effectiveFrameDuration: FrameDurationInfo(value: nativeFrameDuration.value,
                                                                               timescale: nativeFrameDuration.timescale),
                                     actualFrameRate: 1 / nativeFrameDuration.seconds,
                                     outputWidth: request.transform.swapsDimensions ? mode.height : mode.width,
                                     outputHeight: request.transform.swapsDimensions ? mode.width : mode.height,
-                                    rotation: rotation,
-                                    mirrored: request.transform.flip == .horizontal || request.transform.flip == .vertical)
+                                    rotation: request.transform.nativeRotation,
+                                    mirrored: request.transform.nativeMirrored)
         super.init()
         frameQueue.setSpecific(key: frameQueueKey, value: true)
         try sessionQueue.sync {

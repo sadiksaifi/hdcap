@@ -97,6 +97,15 @@ public struct VideoTransform: Codable, Equatable, Sendable {
     }
 
     public var swapsDimensions: Bool { rotation == 90 || rotation == 270 }
+
+    public var nativeMirrored: Bool { flip == .horizontal || flip == .vertical }
+
+    /// AVCapture mirrors before rotating. Reverse the angle when mirroring so
+    /// callers consistently get clockwise rotation followed by output-axis flips.
+    public var nativeRotation: Int {
+        let normalized = (rotation + (flip == .vertical || flip == .both ? 180 : 0)) % 360
+        return nativeMirrored ? (360 - normalized) % 360 : normalized
+    }
 }
 
 public struct CaptureRequest: Sendable {
