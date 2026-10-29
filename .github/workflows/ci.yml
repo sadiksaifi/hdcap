@@ -20,7 +20,9 @@ jobs:
       - uses: actions/checkout@v7
       - uses: taiki-e/install-action@v2
         with:
-          tool: just,actionlint
+          tool: just
+      - name: Install workflow linter
+        run: brew install actionlint
       - uses: actions/cache@v6
         with:
           path: .build
