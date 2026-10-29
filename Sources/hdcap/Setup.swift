@@ -58,12 +58,11 @@ enum CompanionSetup {
     static func perform(current: String, interactive: Bool, removeQuarantine: Bool) async throws -> SetupResult {
         let app = CompanionPaths.application
         var session: CompanionSession?
-        var stale: CompanionSession?
         if (try? CompanionInstaller.verify(app)) != nil {
             try clearQuarantine(app, remove: removeQuarantine, interactive: interactive)
             do {
                 let running = try await CompanionLauncher.connect()
-                if Set(CompanionRequest.capabilities).isSubset(of: running.welcome.capabilities) { session = running } else { stale = running }
+                if Set(CompanionRequest.capabilities).isSubset(of: running.welcome.capabilities) { session = running }
             } catch let error as CaptureError where ["companion_incompatible", "companion_protocol_error", "companion_unresponsive",
                                                      "companion_disconnected"].contains(error.code) {
                 // An incompatible companion is replaced below.
@@ -71,7 +70,7 @@ enum CompanionSetup {
         }
         let updated = session == nil
         if updated {
-            try await update(app, current: current, running: stale)
+            try await update(app, current: current)
             try clearQuarantine(app, remove: removeQuarantine, interactive: interactive)
             let installed = try await CompanionLauncher.connect()
             guard Set(CompanionRequest.capabilities).isSubset(of: installed.welcome.capabilities) else {
@@ -90,7 +89,7 @@ enum CompanionSetup {
     }
 
     /// Downloads the companion built with this CLI release, then replaces the installed app.
-    private static func update(_ app: URL, current: String, running: CompanionSession?) async throws {
+    private static func update(_ app: URL, current: String) async throws {
         guard let version = try? StableVersion(current), version.components != [0, 0, 0] else {
             throw CaptureError("development_build", "Development builds cannot download the companion. Run just companion to install a local build, then run hdcap setup again.")
         }
@@ -101,21 +100,29 @@ enum CompanionSetup {
         let archive = try await ReleaseAssets.download(base.appending(path: CompanionInstaller.archiveName), session: downloads, failure: "setup_failed")
         let checksums = try await ReleaseAssets.download(base.appending(path: "checksums.txt"), session: downloads, failure: "setup_failed")
         try ReleaseAssets.verify(archive, named: CompanionInstaller.archiveName, checksums: checksums)
-        try await quit(running)
+        try await quitRunningCompanion()
         try CompanionInstaller.install(archive: archive, version: version.description, at: app)
     }
 
-    /// Asks a running companion to quit. A companion that is capturing refuses with companion_busy.
-    private static func quit(_ running: CompanionSession?) async throws {
-        if let running, running.welcome.capabilities.contains("quit") {
-            _ = try await running.send(.quit)
-        } else {
-            NSRunningApplication.runningApplications(withBundleIdentifier: CompanionProtocol.bundleIdentifier).forEach { $0.terminate() }
+    /// Asks a running companion to quit, or waits for its idle exit when it cannot confirm that it is
+    /// idle. Setup never terminates a companion, because that would discard a capture in progress.
+    private static func quitRunningCompanion() async throws {
+        func running() -> Bool {
+            !NSRunningApplication.runningApplications(withBundleIdentifier: CompanionProtocol.bundleIdentifier).isEmpty
         }
-        let deadline = ContinuousClock.now + .seconds(10)
-        while !NSRunningApplication.runningApplications(withBundleIdentifier: CompanionProtocol.bundleIdentifier).isEmpty {
+        guard running() else { return }
+        // Connect after downloading, so the companion's handshake deadline cannot expire first.
+        if let session = try? await CompanionSession.connect(socket: CompanionPaths.socket, clientVersion: BuildVersion.current),
+           session.welcome.capabilities.contains("quit") {
+            _ = try await session.send(.quit)
+        } else {
+            Output.notice("Waiting for the running HDCap to finish its work and quit...")
+        }
+        // The companion quits after 60 seconds without a command.
+        let deadline = ContinuousClock.now + .seconds(90)
+        while running() {
             guard ContinuousClock.now < deadline else {
-                throw CaptureError("companion_running", "HDCap did not quit, so setup left it in place. Quit HDCap and run hdcap setup again.")
+                throw CaptureError("companion_running", "HDCap is still running, possibly capturing for another command. Quit HDCap and run hdcap setup again.")
             }
             try await Task.sleep(for: .milliseconds(100))
         }
@@ -177,14 +184,13 @@ enum CompanionInstaller {
         guard actual == version else {
             throw CaptureError("companion_invalid", "The downloaded companion has the wrong version.", details: ["expected": version, "actual": actual])
         }
-        let previous = staging.appending(path: "previous.app")
+        // Exchange the two directories in one step, so an interruption leaves one complete app in place.
+        // The previous app ends up in staging and is removed with it.
         var status = stat()
-        if lstat(destination.path, &status) == 0 { try files.moveItem(at: destination, to: previous) }
-        do {
-            try files.moveItem(at: staged, to: destination)
-        } catch {
-            try? files.moveItem(at: previous, to: destination)
-            throw CaptureError("setup_failed", "Cannot install HDCap.app.", details: ["path": destination.path, "reason": error.localizedDescription])
+        let exists = lstat(destination.path, &status) == 0
+        let moved = exists ? renamex_np(staged.path, destination.path, UInt32(RENAME_SWAP)) : rename(staged.path, destination.path)
+        guard moved == 0 else {
+            throw CaptureError("setup_failed", "Cannot install HDCap.app.", details: ["path": destination.path, "reason": String(cString: strerror(errno))])
         }
     }
 
