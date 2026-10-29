@@ -61,6 +61,9 @@ public struct ModeInfo: Codable, Equatable, Sendable {
 }
 
 public enum DeviceCatalog {
+    // UVC frame intervals use 100 ns ticks. Accept only one tick of endpoint
+    // quantization, which still distinguishes nominal 60 from 60000/1001 fps.
+    static let frameDurationTolerance = 0.000_000_1
     static func captureDevices() -> [AVCaptureDevice] {
         AVCaptureDevice.DiscoverySession(deviceTypes: [.external, .builtInWideAngleCamera],
                                          mediaType: .video, position: .unspecified).devices
@@ -105,7 +108,9 @@ public enum DeviceCatalog {
         let matches = modes.filter {
             $0.width == resolution.width && $0.height == resolution.height &&
             $0.frameRateRanges.contains { range in
-                frameRate.value >= range.min - 0.000_001 && frameRate.value <= range.max + 0.000_001
+                let duration = frameRate.frameDuration.seconds
+                return duration >= 1 / range.max - frameDurationTolerance &&
+                    duration <= 1 / range.min + frameDurationTolerance
             }
         }
         guard let selected = matches.min(by: {
@@ -115,6 +120,22 @@ public enum DeviceCatalog {
             throw CaptureError("unsupported_mode", "The device does not support \(resolution) at \(frameRate) fps.")
         }
         return selected
+    }
+
+    /// Keeps a nominal CLI frame rate within the device's exact native interval.
+    static func supportedDuration(for frameRate: FrameRate, ranges: [AVFrameRateRange]) throws -> CMTime {
+        let requested = frameRate.frameDuration
+        for range in ranges {
+            if CMTimeCompare(requested, range.minFrameDuration) >= 0,
+               CMTimeCompare(requested, range.maxFrameDuration) <= 0 { return requested }
+            if abs(requested.seconds - range.minFrameDuration.seconds) <= frameDurationTolerance {
+                return range.minFrameDuration
+            }
+            if abs(requested.seconds - range.maxFrameDuration.seconds) <= frameDurationTolerance {
+                return range.maxFrameDuration
+            }
+        }
+        throw CaptureError("unsupported_mode", "The device does not support \(frameRate) fps.")
     }
 
     private static func preference(_ subtype: String) -> Int {

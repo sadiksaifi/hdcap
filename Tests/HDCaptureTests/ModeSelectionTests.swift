@@ -33,3 +33,21 @@ import Testing
         try DeviceCatalog.selectMode(from: formats, resolution: Resolution("1280x720"), frameRate: FrameRate("60"))
     }
 }
+
+@Test func acceptsNominalRatesQuantizedToUVCFrameIntervalTicks() throws {
+    // Independent UVC descriptor values: one tick is 100 ns.
+    let formats = [
+        ModeInfo(id: "60", index: 0, width: 1280, height: 720, pixelFormat: "420v",
+                 frameRateRanges: [.init(min: 10_000_000.0 / 166_666, max: 10_000_000.0 / 166_666)]),
+        ModeInfo(id: "30", index: 1, width: 1920, height: 1080, pixelFormat: "420v",
+                 frameRateRanges: [.init(min: 10_000_000.0 / 333_333, max: 10_000_000.0 / 333_333)]),
+    ]
+    #expect(try DeviceCatalog.selectMode(from: formats, resolution: Resolution("1280x720"), frameRate: FrameRate("60")).id == "60")
+    #expect(try DeviceCatalog.selectMode(from: formats, resolution: Resolution("1920x1080"), frameRate: FrameRate("30")).id == "30")
+    #expect(throws: CaptureError.self) {
+        try DeviceCatalog.selectMode(from: formats, resolution: Resolution("1280x720"), frameRate: FrameRate("59.94"))
+    }
+    #expect(throws: CaptureError.self) {
+        try DeviceCatalog.selectMode(from: formats, resolution: Resolution("1920x1080"), frameRate: FrameRate("29.97"))
+    }
+}

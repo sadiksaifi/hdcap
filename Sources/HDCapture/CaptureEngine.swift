@@ -3,10 +3,17 @@ import CoreMedia
 import CoreVideo
 import Foundation
 
+public struct FrameDurationInfo: Codable, Sendable {
+    public let value: Int64
+    public let timescale: Int32
+}
+
 public struct SelectedMode: Codable, Sendable {
     public let device: DeviceInfo
     public let mode: ModeInfo
     public let frameRate: FrameRate
+    public let effectiveFrameDuration: FrameDurationInfo
+    public let actualFrameRate: Double
     public let outputWidth: Int
     public let outputHeight: Int
     /// Native connection rotation after resolving vertical and double flips.
@@ -34,6 +41,7 @@ public final class CaptureEngine: NSObject, AVCaptureVideoDataOutputSampleBuffer
 
     private let device: AVCaptureDevice
     private let format: AVCaptureDevice.Format
+    private let nativeFrameDuration: CMTime
     private let request: CaptureRequest
     private let output = AVCaptureVideoDataOutput()
     private let sessionQueue = DispatchQueue(label: "hdcap.capture.session", qos: .userInitiated)
@@ -69,9 +77,14 @@ public final class CaptureEngine: NSObject, AVCaptureVideoDataOutputSampleBuffer
         let modes = device.formats.enumerated().map { ModeInfo($0.element, index: $0.offset) }
         let mode = try DeviceCatalog.selectMode(from: modes, resolution: request.resolution, frameRate: request.frameRate)
         format = device.formats[mode.index]
+        nativeFrameDuration = try DeviceCatalog.supportedDuration(for: request.frameRate,
+                                                                 ranges: format.videoSupportedFrameRateRanges)
         let addsHalfTurn = request.transform.flip == .vertical || request.transform.flip == .both
         let rotation = (request.transform.rotation + (addsHalfTurn ? 180 : 0)) % 360
         selectedMode = SelectedMode(device: DeviceInfo(device), mode: mode, frameRate: request.frameRate,
+                                    effectiveFrameDuration: FrameDurationInfo(value: nativeFrameDuration.value,
+                                                                              timescale: nativeFrameDuration.timescale),
+                                    actualFrameRate: 1 / nativeFrameDuration.seconds,
                                     outputWidth: request.transform.swapsDimensions ? mode.height : mode.width,
                                     outputHeight: request.transform.swapsDimensions ? mode.width : mode.height,
                                     rotation: rotation,
@@ -135,8 +148,8 @@ public final class CaptureEngine: NSObject, AVCaptureVideoDataOutputSampleBuffer
             // macOS may reset activeFormat during startRunning unless this lock is held.
             session.beginConfiguration()
             device.activeFormat = format
-            device.activeVideoMinFrameDuration = request.frameRate.frameDuration
-            device.activeVideoMaxFrameDuration = request.frameRate.frameDuration
+            device.activeVideoMinFrameDuration = nativeFrameDuration
+            device.activeVideoMaxFrameDuration = nativeFrameDuration
             let subtype = CMFormatDescriptionGetMediaSubType(format.formatDescription)
             guard output.availableVideoPixelFormatTypes.contains(subtype) else {
                 session.commitConfiguration()
@@ -170,7 +183,7 @@ public final class CaptureEngine: NSObject, AVCaptureVideoDataOutputSampleBuffer
                 session.stopRunning()
                 throw error
             }
-            let requestedDuration = request.frameRate.frameDuration
+            let requestedDuration = nativeFrameDuration
             guard CMTimeCompare(device.activeVideoMinFrameDuration, requestedDuration) == 0,
                   CMTimeCompare(device.activeVideoMaxFrameDuration, requestedDuration) == 0 else {
                 let error = fail(CaptureError("frame_rate_changed", "macOS changed the requested frame duration during startup.",
