@@ -1,0 +1,24 @@
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# Xcode local state
+DerivedData/
+xcuserdata/
+*.xcuserstate
+
+# macOS
+.DS_Store
+._*
+
+# Local configuration
+.env
+.env.*
+!.env.example
+
+# Generated capture and profiling artifacts
+/artifacts/
+*.profraw
+*.profdata
+
+# Keep Package.resolved tracked for reproducible CLI builds.
