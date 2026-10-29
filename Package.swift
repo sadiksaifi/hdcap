@@ -21,6 +21,7 @@ let package = Package(
         .executableTarget(name: "HDCapCompanion", dependencies: ["HDCapture", "CompanionIPC"]),
         .testTarget(name: "HDCaptureTests", dependencies: ["HDCapture"]),
         .testTarget(name: "CompanionIPCTests", dependencies: ["CompanionIPC"]),
+        .testTarget(name: "hdcapTests", dependencies: ["hdcap", "CompanionIPC", "HDCapture"]),
         .plugin(name: "GitVersionPlugin", capability: .buildTool()),
     ]
 )

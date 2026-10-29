@@ -66,7 +66,7 @@ enum CompanionLauncher {
         do {
             _ = try await NSWorkspace.shared.openApplication(at: app, configuration: configuration)
         } catch {
-            throw CaptureError("companion_launch_failed", "macOS did not launch HDCap. Run hdcap setup from Terminal to check the companion.",
+            throw CaptureError("companion_launch_failed", "macOS did not launch HDCap. If macOS blocked it, choose Open Anyway for HDCap in System Settings > Privacy & Security, then run hdcap setup from Terminal.",
                                details: ["path": app.path, "reason": error.localizedDescription])
         }
     }

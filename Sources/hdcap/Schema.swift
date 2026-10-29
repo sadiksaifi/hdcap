@@ -21,7 +21,7 @@ struct Schema: ParsableCommand {
       "required": ["schema_version", "command"],
       "properties": {
         "schema_version": {"const": 1},
-        "command": {"enum": ["hdcap", "devices", "modes", "view", "record", "screenshot", "schema", "upgrade"]}
+        "command": {"enum": ["hdcap", "devices", "modes", "view", "record", "screenshot", "setup", "schema", "upgrade"]}
       },
       "oneOf": [
         {"required": ["error"], "properties": {"error": {"$ref": "#/$defs/error"}}, "not": {"required": ["data"]}},
@@ -32,11 +32,16 @@ struct Schema: ParsableCommand {
           {"if": {"properties": {"command": {"const": "record"}}}, "then": {"properties": {"data": {"$ref": "#/$defs/record"}}}},
           {"if": {"properties": {"command": {"const": "screenshot"}}}, "then": {"properties": {"data": {"$ref": "#/$defs/screenshot"}}}},
           {"if": {"properties": {"command": {"const": "upgrade"}}}, "then": {"properties": {"data": {"$ref": "#/$defs/upgrade"}}}},
+          {"if": {"properties": {"command": {"const": "setup"}}}, "then": {"properties": {"data": {"$ref": "#/$defs/setup"}}}},
           {"if": {"properties": {"command": {"const": "schema"}}}, "then": {"properties": {"data": {"type": "object", "required": ["$schema", "$defs"]}}}}
         ]}
       ],
       "$defs": {
         "upgrade": {"type": "object", "required": ["method", "previousVersion", "version", "updated", "path"], "properties": {"method": {"enum": ["homebrew", "curl"]}, "previousVersion": {"type": "string"}, "version": {"type": "string"}, "updated": {"type": "boolean"}, "path": {"type": "string"}}},
+        "setup": {"type": "object", "required": ["path", "version", "protocolVersion", "updated", "cameraAuthorization", "capture"], "properties": {
+          "path": {"type": "string"}, "version": {"type": "string"}, "protocolVersion": {"type": "integer", "minimum": 1}, "updated": {"type": "boolean"},
+          "cameraAuthorization": {"enum": ["authorized", "not_determined", "denied", "restricted"]}, "capture": {"const": "companion"}
+        }},
         "error": {"type": "object", "required": ["code", "message", "details"], "properties": {
           "code": {"type": "string"}, "message": {"type": "string"}, "details": {"type": "object", "additionalProperties": {"type": "string"}}
         }},
