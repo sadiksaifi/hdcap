@@ -7,7 +7,6 @@ Cheap dongles often expose a fast video format alongside a slow raw one. hdcap p
 Requires macOS 26+, Xcode and [just](https://github.com/casey/just). Video only.
 
 ```sh
-just install
 hdcap devices
 hdcap view --device "USB Video" --resolution 1280x720 --fps 60
 ```
