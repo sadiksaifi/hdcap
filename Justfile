@@ -27,7 +27,7 @@ check: test build companion-bundle
 companion-bundle: build
     sh .github/scripts/bundle-companion.sh .build/release/hdcap-companion 0.0.0 .build/HDCap.app
 
-# Replace ~/Applications/HDCap.app with a development build, then run hdcap setup.
+# Install a development companion at ~/Applications/HDCap.app. Run hdcap setup afterward.
 companion: companion-bundle
     #!/usr/bin/env bash
     set -euo pipefail
