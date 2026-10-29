@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Check the executable's machine interface without opening capture hardware."""
 import json
+import os
 import pathlib
+import socket
 import subprocess
 import sys
 import tempfile
@@ -65,6 +67,64 @@ class CLIContract(unittest.TestCase):
         self.assertIn("error", schema["$defs"])
         self.assertEqual(set(schema["$defs"]["setup"]["properties"]["cameraAuthorization"]["enum"]), {"authorized", "not_determined", "denied", "restricted"})
         self.assertIn("frameRate", schema["$defs"])
+
+    def companion_request(self, *args):
+        with tempfile.TemporaryDirectory(prefix="hdcap-", dir="/tmp") as directory, socket.socket(socket.AF_UNIX) as listener:
+            address = pathlib.Path(directory) / "Library/Application Support/hdcap/companion.sock"
+            address.parent.mkdir(parents=True)
+            listener.bind(str(address))
+            listener.listen(1)
+            listener.settimeout(10)
+            env = os.environ | {"HOME": directory, "CFFIXED_USER_HOME": directory, "HDCAP_CAPTURE": "companion"}
+            process = subprocess.Popen([BINARY, *args], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
+            try:
+                with listener.accept()[0] as connection:
+                    connection.settimeout(10)
+                    with connection.makefile("rwb") as stream:
+                        self.assertIn("hello", json.loads(stream.readline()))
+                        stream.write(b'{"welcome":{"protocolVersion":1,"companionVersion":"1.0.0","capabilities":["view","record","screenshot"]}}\n')
+                        stream.flush()
+                        request_line = stream.readline()
+                        self.assertTrue(request_line, "CLI disconnected before sending the capture request")
+                        request = json.loads(request_line)["request"]["_0"]
+                        stream.write(b'{"error":{"_0":{"code":"test_complete","message":"Request checked","details":{}}}}\n')
+                        stream.flush()
+                stdout, stderr = process.communicate(timeout=10)
+                self.assertEqual(process.returncode, 1, stderr)
+                self.assertEqual(stdout, "")
+                self.assertEqual(json.loads(stderr)["error"]["code"], "test_complete")
+                return request
+            finally:
+                if process.poll() is None:
+                    process.kill()
+                process.communicate(timeout=10)
+
+    def test_capture_commands_preserve_options_sent_to_companion(self):
+        for command in ("view", "record", "screenshot"):
+            for option, field in (("--device", "deviceName"), ("--device-id", "deviceID")):
+                with self.subTest(command=command, option=option), tempfile.TemporaryDirectory() as directory:
+                    path = pathlib.Path(directory) / ("capture.png" if command == "screenshot" else "capture.mp4")
+                    args = [command] + ([] if command == "view" else [str(path), "--overwrite"])
+                    args += [option, "Selected capture device", "--resolution", "1920x1080", "--fps", "60000/1001",
+                             "--rotate", "90", "--flip", "horizontal", "--timeout", "7", "--no-input", "--json"]
+                    if command != "screenshot":
+                        args += ["--duration", "2"]
+                    if command == "record":
+                        args += ["--codec", "hevc", "--bitrate", "8000000"]
+                    job = self.companion_request(*args)[command]["job"]
+                    self.assertEqual(job["capture"], {
+                        field: "Selected capture device", "resolution": {"width": 1920, "height": 1080},
+                        "frameRate": {"numerator": 60000, "denominator": 1001},
+                        "transform": {"rotation": 90, "flip": "horizontal"}, "timeout": 7, "noInput": True,
+                    })
+                    if command != "view":
+                        self.assertEqual(job["path"], str(path))
+                        self.assertTrue(job["overwrite"])
+                    if command != "screenshot":
+                        self.assertEqual(job["duration"], 2)
+                    if command == "record":
+                        self.assertEqual(job["codec"], "hevc")
+                        self.assertEqual(job["bitrate"], 8000000)
 
     def test_help_and_version_are_clean_exits(self):
         for args in [("--help",), ("record", "--help"), ("--version",)]:
