@@ -9,8 +9,8 @@ struct HDCap: ParsableCommand {
         commandName: "hdcap",
         abstract: "Capture HDMI and UVC video with Apple Silicon.",
         discussion: "Run devices, then modes --device NAME to discover available capture modes. Video only; audio capture is not supported.",
-        version: "0.1.0",
-        subcommands: [Devices.self, Modes.self, View.self, Record.self, Screenshot.self, Schema.self]
+        version: BuildVersion.current,
+        subcommands: [Devices.self, Modes.self, View.self, Record.self, Screenshot.self, Schema.self, Upgrade.self]
     )
 
     @OptionGroup var output: OutputOptions

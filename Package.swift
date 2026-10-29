@@ -15,7 +15,8 @@ let package = Package(
         .target(name: "HDCapture"),
         .executableTarget(name: "hdcap", dependencies: [
             "HDCapture", .product(name: "ArgumentParser", package: "swift-argument-parser"),
-        ]),
+        ], plugins: [.plugin(name: "GitVersionPlugin")]),
         .testTarget(name: "HDCaptureTests", dependencies: ["HDCapture"]),
+        .plugin(name: "GitVersionPlugin", capability: .buildTool()),
     ]
 )

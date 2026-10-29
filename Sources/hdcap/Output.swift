@@ -10,7 +10,7 @@ enum Output {
     }
 
     static var command: String {
-        CommandLine.arguments.dropFirst().first { ["devices", "modes", "view", "record", "screenshot", "schema"].contains($0) } ?? "hdcap"
+        CommandLine.arguments.dropFirst().first { ["devices", "modes", "view", "record", "screenshot", "schema", "upgrade"].contains($0) } ?? "hdcap"
     }
 
     static func result<T: Encodable>(_ data: T, command: String, text: () -> String) throws {

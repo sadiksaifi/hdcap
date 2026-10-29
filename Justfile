@@ -17,6 +17,8 @@ dev:
 test: dev
     swift test
     python3 Tests/cli.py .build/debug/hdcap
+    python3 Tests/installer.py
+    python3 Tests/upgrade.py .build/debug/hdcap
 
 # Run tests and build the release binary.
 check: test build

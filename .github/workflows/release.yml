@@ -1,0 +1,119 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing stable tag to release or retry
+        required: true
+        type: string
+      homebrew_only:
+        description: Retry the formula for an already-published stable release
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: ${{ !inputs.homebrew_only }}
+    runs-on: macos-26
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just,git-cliff
+      - name: Check out release source
+        if: github.event_name == 'workflow_dispatch'
+        run: git checkout --detach "refs/tags/$RELEASE_TAG"
+      - name: Validate stable release tag
+        run: |
+          git fetch --force --tags origin
+          npx --yes tagsmith@latest validate --tag "$RELEASE_TAG" --channel stable --github-output
+      - uses: actions/cache@v6
+        with:
+          path: .build
+          key: swift-release-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Package.swift', 'Package.resolved') }}-${{ github.sha }}
+          restore-keys: |
+            swift-release-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Package.swift', 'Package.resolved') }}-
+      - name: Build signed release archive and checksums
+        run: sh .github/scripts/package-release.sh "$RELEASE_TAG" "$RUNNER_TEMP/dist"
+      - name: Generate release notes
+        run: git-cliff --current > "$RUNNER_TEMP/release-notes.md"
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$RELEASE_TAG" \
+            "$RUNNER_TEMP/dist/hdcap_darwin_arm64.tar.gz" \
+            "$RUNNER_TEMP/dist/install.sh" \
+            "$RUNNER_TEMP/dist/checksums.txt" \
+            --verify-tag --title "$RELEASE_TAG" --notes-file "$RUNNER_TEMP/release-notes.md"
+
+  homebrew:
+    needs: release
+    if: ${{ !cancelled() && (needs.release.result == 'success' || (github.event_name == 'workflow_dispatch' && inputs.homebrew_only)) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    concurrency:
+      group: homebrew-hdcap
+      cancel-in-progress: false
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Validate published stable release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          npx --yes tagsmith@latest validate --tag "$RELEASE_TAG" --channel stable --github-output
+          if [ "$(gh release view "$RELEASE_TAG" --json isDraft,isPrerelease --jq '.isDraft or .isPrerelease')" != false ]; then
+            echo "Homebrew requires a published stable GitHub release." >&2
+            exit 1
+          fi
+          mkdir -p "$RUNNER_TEMP/release"
+          gh release download "$RELEASE_TAG" --pattern hdcap_darwin_arm64.tar.gz --pattern checksums.txt --dir "$RUNNER_TEMP/release"
+          cd "$RUNNER_TEMP/release"
+          awk '$2 == "hdcap_darwin_arm64.tar.gz" { print; found++ } END { if (found != 1) exit 1 }' checksums.txt > selected-checksum.txt
+          sha256sum -c selected-checksum.txt
+      - uses: actions/checkout@v7
+        with:
+          repository: sadiksaifi/homebrew-tap
+          ref: main
+          token: ${{ secrets.HOMEBREW_TAP_PAT }}
+          path: homebrew-tap
+      - name: Generate Homebrew formula
+        run: sh .github/scripts/update-homebrew.sh "$RELEASE_TAG" "$RUNNER_TEMP/release/hdcap_darwin_arm64.tar.gz" homebrew-tap
+      - name: Publish Homebrew formula
+        working-directory: homebrew-tap
+        run: |
+          git add Formula/hdcap.rb
+          if git diff --cached --quiet; then exit 0; fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m "chore: update hdcap to $RELEASE_TAG"
+          git push origin HEAD:main

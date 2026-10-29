@@ -21,7 +21,7 @@ struct Schema: ParsableCommand {
       "required": ["schema_version", "command"],
       "properties": {
         "schema_version": {"const": 1},
-        "command": {"enum": ["hdcap", "devices", "modes", "view", "record", "screenshot", "schema"]}
+        "command": {"enum": ["hdcap", "devices", "modes", "view", "record", "screenshot", "schema", "upgrade"]}
       },
       "oneOf": [
         {"required": ["error"], "properties": {"error": {"$ref": "#/$defs/error"}}, "not": {"required": ["data"]}},
@@ -31,10 +31,12 @@ struct Schema: ParsableCommand {
           {"if": {"properties": {"command": {"const": "view"}}}, "then": {"properties": {"data": {"$ref": "#/$defs/view"}}}},
           {"if": {"properties": {"command": {"const": "record"}}}, "then": {"properties": {"data": {"$ref": "#/$defs/record"}}}},
           {"if": {"properties": {"command": {"const": "screenshot"}}}, "then": {"properties": {"data": {"$ref": "#/$defs/screenshot"}}}},
+          {"if": {"properties": {"command": {"const": "upgrade"}}}, "then": {"properties": {"data": {"$ref": "#/$defs/upgrade"}}}},
           {"if": {"properties": {"command": {"const": "schema"}}}, "then": {"properties": {"data": {"type": "object", "required": ["$schema", "$defs"]}}}}
         ]}
       ],
       "$defs": {
+        "upgrade": {"type": "object", "required": ["method", "previousVersion", "version", "updated", "path"], "properties": {"method": {"enum": ["homebrew", "curl"]}, "previousVersion": {"type": "string"}, "version": {"type": "string"}, "updated": {"type": "boolean"}, "path": {"type": "string"}}},
         "error": {"type": "object", "required": ["code", "message", "details"], "properties": {
           "code": {"type": "string"}, "message": {"type": "string"}, "details": {"type": "object", "additionalProperties": {"type": "string"}}
         }},
