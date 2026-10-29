@@ -1,4 +1,5 @@
 import AppKit
+import CompanionIPC
 import Foundation
 import HDCapture
 
@@ -20,14 +21,29 @@ enum Runtime {
         dispatchMain()
     }
 
-    static func capture<Job: CaptureJob>(_ job: Job, command: String, window: Bool = false,
-                                         text: @escaping (Job.Result) -> String) -> Never {
-        run(window: window) {
-            let host = TerminalHost()
-            defer { host.cancel() }
-            try await CaptureEngine.authorize(noInput: job.capture.noInput)
-            let result = try await job.run(host: host)
-            try Output.result(result, command: command) { text(result) }
+    static func capture<Job: CompanionJob>(_ job: Job, command: String, window: Bool = false,
+                                           text: @escaping (Job.Result) -> String) -> Never {
+        let route: CaptureRoute
+        do { route = try CaptureRoute.current() } catch { Darwin.exit(Output.error(error)) }
+        switch route {
+        case .direct:
+            run(window: window) {
+                let host = TerminalHost()
+                defer { host.cancel() }
+                try await CaptureEngine.authorize(noInput: job.capture.noInput)
+                let result = try await job.run(host: host)
+                try Output.result(result, command: command) { text(result) }
+            }
+        case .companion:
+            // The companion owns the camera and any preview window. It never prompts for permission.
+            run {
+                let signals = SignalMonitor()
+                defer { signals.cancel() }
+                let session = try await CompanionLauncher.connect()
+                let result = try await session.run(job, stopSignal: { signals.received },
+                                                   onNotice: { Output.notice($0) }, onGraceful: { signals.allowGracefulStop() })
+                try Output.result(result, command: command) { text(result) }
+            }
         }
     }
 }
