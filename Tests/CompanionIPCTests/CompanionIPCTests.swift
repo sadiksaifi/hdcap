@@ -60,7 +60,7 @@ private func expectError(_ code: String, _ operation: () async throws -> Void) a
     let socket = socketURL()
     let server = try CompanionServer(socket: socket, version: "1.2.3", service: FakeService())
     defer { server.stop() }
-    let session = try CompanionSession.connect(socket: socket, clientVersion: "9.9.9")
+    let session = try await CompanionSession.connect(socket: socket, clientVersion: "9.9.9")
     #expect(session.welcome.protocolVersion == CompanionProtocol.version)
     #expect(session.welcome.companionVersion == "1.2.3")
     let result = try await session.send(.authorize(prompt: false))
@@ -69,16 +69,16 @@ private func expectError(_ code: String, _ operation: () async throws -> Void) a
 }
 
 @Test func reportsMissingCompanionSeparately() async {
-    await expectError("companion_not_running") { _ = try CompanionSession.connect(socket: socketURL(), clientVersion: "1.0.0") }
+    await expectError("companion_not_running") { _ = try await CompanionSession.connect(socket: socketURL(), clientVersion: "1.0.0") }
 }
 
-@Test func rejectsClientsWithoutACommonProtocolVersion() throws {
+@Test func rejectsClientsWithoutACommonProtocolVersion() async throws {
     let socket = socketURL()
     let server = try CompanionServer(socket: socket, version: "1.0.0", service: FakeService())
     defer { server.stop() }
     let channel = try MessageChannel.connect(to: socket)
     try channel.send(ClientMessage.hello(protocolVersions: [CompanionProtocol.version + 1], clientVersion: "2.0.0"))
-    guard case .error(let error) = try channel.receive(CompanionMessage.self) else { Issue.record("Expected an error"); return }
+    guard case .error(let error) = try await channel.receive(CompanionMessage.self) else { Issue.record("Expected an error"); return }
     #expect(error.code == "companion_incompatible")
 }
 
@@ -91,7 +91,7 @@ private func expectError(_ code: String, _ operation: () async throws -> Void) a
         try? channel.send(CompanionMessage.welcome(protocolVersion: CompanionProtocol.version, companionVersion: "1.0.0", capabilities: ["authorize"]))
         _ = try? channel.receive(ClientMessage.self)
     }
-    let session = try CompanionSession.connect(socket: socket, clientVersion: "1.0.0")
+    let session = try await CompanionSession.connect(socket: socket, clientVersion: "1.0.0")
     await expectError("companion_incompatible") { _ = try await session.send(.screenshot(job: job())) }
 }
 
@@ -154,7 +154,7 @@ private func expectError(_ code: String, _ operation: () async throws -> Void) a
         _ = try? channel.receive(ClientMessage.self)
         channel.close()
     }
-    let session = try CompanionSession.connect(socket: socket, clientVersion: "1.0.0")
+    let session = try await CompanionSession.connect(socket: socket, clientVersion: "1.0.0")
     await expectError("companion_disconnected") { _ = try await session.send(.screenshot(job: job())) }
 }
 

@@ -67,11 +67,14 @@ public enum CompanionResult: Codable, Sendable {
 /// A capture job the companion can run on behalf of the CLI.
 public protocol CompanionJob: CaptureJob {
     var request: CompanionRequest { get }
+    /// The longest a healthy companion can take to reply. Jobs without a duration have no bound.
+    var replyWithin: Duration? { get }
     static func result(from: CompanionResult) -> Result?
 }
 
 extension ViewJob: CompanionJob {
     public var request: CompanionRequest { .view(job: self) }
+    public var replyWithin: Duration? { duration.map { .seconds(capture.timeout + $0) + CompanionProtocol.stopTimeout } }
     public static func result(from result: CompanionResult) -> ViewResult? {
         if case .view(let value) = result { value } else { nil }
     }
@@ -79,6 +82,7 @@ extension ViewJob: CompanionJob {
 
 extension RecordJob: CompanionJob {
     public var request: CompanionRequest { .record(job: self) }
+    public var replyWithin: Duration? { duration.map { .seconds(capture.timeout + $0) + CompanionProtocol.stopTimeout } }
     public static func result(from result: CompanionResult) -> RecordResult? {
         if case .record(let value) = result { value } else { nil }
     }
@@ -86,6 +90,7 @@ extension RecordJob: CompanionJob {
 
 extension ScreenshotJob: CompanionJob {
     public var request: CompanionRequest { .screenshot(job: self) }
+    public var replyWithin: Duration? { .seconds(capture.timeout) + CompanionProtocol.stopTimeout }
     public static func result(from result: CompanionResult) -> ScreenshotCompletion? {
         if case .screenshot(let value) = result { value } else { nil }
     }

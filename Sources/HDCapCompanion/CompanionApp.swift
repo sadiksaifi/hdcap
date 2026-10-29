@@ -78,7 +78,8 @@ final class IdleExit: @unchecked Sendable {
         }
         guard connections == 0 else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { [self] in
-            if lock.withLock({ generation == current }) { exit(0) }
+            // Exit while holding the lock, so a connection either counts first or never starts.
+            lock.withLock { if generation == current { exit(0) } }
         }
     }
 }

@@ -17,6 +17,7 @@ public final class CompanionServer: @unchecked Sendable {
     private var exclusive = false
     private var connections = 0
 
+    /// `onConnectionCount` runs while the server holds its lock and must not call back into the server.
     public init(socket: URL, version: String, service: some CompanionService,
                 onConnectionCount: @escaping @Sendable (Int) -> Void = { _ in }) throws {
         listener = try MessageListener(socket: socket)
@@ -36,11 +37,12 @@ public final class CompanionServer: @unchecked Sendable {
 
     public func stop() { listener.close() }
 
+    /// Reports counts under the lock so the idle timer never sees a stale zero after a new connection.
     private func count(_ change: Int) {
-        onConnectionCount(lock.withLock {
+        lock.withLock {
             connections += change
-            return connections
-        })
+            onConnectionCount(connections)
+        }
     }
 
     private func serve(_ channel: MessageChannel) async {

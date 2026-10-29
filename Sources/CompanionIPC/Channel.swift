@@ -34,6 +34,11 @@ public final class MessageChannel: @unchecked Sendable {
         set { stateLock.withLock { storedDeadline = newValue } }
     }
 
+    /// Moves the deadline earlier, never later.
+    public func limitDeadline(to instant: ContinuousClock.Instant) {
+        stateLock.withLock { storedDeadline = min(storedDeadline ?? instant, instant) }
+    }
+
     public static func connect(to socket: URL) throws -> MessageChannel {
         let descriptor = try makeSocket()
         let connected = try withSocketAddress(socket) { Darwin.connect(descriptor, $0, $1) }
@@ -125,10 +130,9 @@ public final class MessageListener: @unchecked Sendable {
         }
         unlink(socket.path)
         let descriptor = try makeSocket()
-        let previous = umask(0o177)
+        // The private directory already blocks other users, so setting the mode after bind leaves no gap.
         let bound = try withSocketAddress(socket) { bind(descriptor, $0, $1) }
-        umask(previous)
-        guard bound == 0, listen(descriptor, 8) == 0 else {
+        guard bound == 0, chmod(socket.path, 0o600) == 0, listen(descriptor, 8) == 0 else {
             let reason = String(cString: strerror(errno))
             Darwin.close(descriptor)
             throw CaptureError("companion_listen_failed", "Cannot listen for hdcap commands.", details: ["path": socket.path, "reason": reason])
