@@ -78,8 +78,7 @@ public enum DeviceCatalog {
         if let deviceID {
             matches = devices.filter { $0.uniqueID == deviceID }
         } else if let deviceName {
-            let exact = devices.filter { $0.localizedName == deviceName }
-            matches = exact.isEmpty ? devices.filter { $0.localizedName.localizedCaseInsensitiveContains(deviceName) } : exact
+            matches = devices.filter { $0.localizedName == deviceName }
         } else {
             matches = devices.filter { $0.deviceType == .external }
         }

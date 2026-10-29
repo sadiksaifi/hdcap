@@ -166,8 +166,19 @@ public final class CaptureEngine: NSObject, AVCaptureVideoDataOutputSampleBuffer
             let actual = CMVideoFormatDescriptionGetDimensions(device.activeFormat.formatDescription)
             guard actual.width == selectedMode.mode.width, actual.height == selectedMode.mode.height,
                   CMFormatDescriptionGetMediaSubType(device.activeFormat.formatDescription) == subtype else {
+                let error = fail(CaptureError("mode_changed", "macOS changed the selected device format during startup."))
                 session.stopRunning()
-                throw CaptureError("mode_changed", "macOS changed the selected device format during startup.")
+                throw error
+            }
+            let requestedDuration = request.frameRate.frameDuration
+            guard CMTimeCompare(device.activeVideoMinFrameDuration, requestedDuration) == 0,
+                  CMTimeCompare(device.activeVideoMaxFrameDuration, requestedDuration) == 0 else {
+                let error = fail(CaptureError("frame_rate_changed", "macOS changed the requested frame duration during startup.",
+                                             details: ["requestedFPS": request.frameRate.description,
+                                                       "minimumFrameDurationSeconds": String(device.activeVideoMinFrameDuration.seconds),
+                                                       "maximumFrameDurationSeconds": String(device.activeVideoMaxFrameDuration.seconds)]))
+                session.stopRunning()
+                throw error
             }
         }
     }
@@ -177,12 +188,20 @@ public final class CaptureEngine: NSObject, AVCaptureVideoDataOutputSampleBuffer
         lock.withLock { acceptingFrames = false; handler = nil }
         sessionQueue.sync { if session.isRunning { session.stopRunning() } }
         if DispatchQueue.getSpecific(key: frameQueueKey) == nil { frameQueue.sync {} }
+        lock.withLock {
+            if let startedAt {
+                storedStatistics.elapsedSeconds = ProcessInfo.processInfo.systemUptime - startedAt
+                self.startedAt = nil
+            }
+        }
     }
 
-    private func fail(_ error: CaptureError) {
+    @discardableResult
+    private func fail(_ error: CaptureError) -> CaptureError {
         lock.withLock {
             if storedFailure == nil { storedFailure = error }
             acceptingFrames = false
+            return storedFailure ?? error
         }
     }
 
