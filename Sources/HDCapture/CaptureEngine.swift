@@ -254,3 +254,27 @@ public final class CaptureEngine: NSObject, AVCaptureVideoDataOutputSampleBuffer
         lock.withLock { storedStatistics.framesDropped += 1 }
     }
 }
+
+public enum CameraAuthorization: String, Codable, Sendable {
+    case authorized, denied, restricted
+    case notDetermined = "not_determined"
+}
+
+extension CaptureEngine {
+    /// Camera authorization for this process's own macOS privacy identity.
+    public static var cameraAuthorization: CameraAuthorization {
+        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        case .authorized: .authorized
+        case .notDetermined: .notDetermined
+        case .denied: .denied
+        case .restricted: .restricted
+        @unknown default: .restricted
+        }
+    }
+
+    /// Shows the system prompt only while authorization is undetermined.
+    public static func requestCameraAccess() async -> CameraAuthorization {
+        if cameraAuthorization == .notDetermined { _ = await AVCaptureDevice.requestAccess(for: .video) }
+        return cameraAuthorization
+    }
+}

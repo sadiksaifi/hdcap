@@ -10,7 +10,7 @@ struct HDCap: ParsableCommand {
         abstract: "Capture HDMI and UVC video with Apple Silicon.",
         discussion: "Run devices, then modes --device NAME to discover available capture modes. Video only; audio capture is not supported.",
         version: BuildVersion.current,
-        subcommands: [Devices.self, Modes.self, View.self, Record.self, Screenshot.self, Schema.self, Upgrade.self]
+        subcommands: [Devices.self, Modes.self, View.self, Record.self, Screenshot.self, Setup.self, Schema.self, Upgrade.self]
     )
 
     @OptionGroup var output: OutputOptions
@@ -73,32 +73,9 @@ struct View: ParsableCommand {
     mutating func validate() throws { try validateDuration(duration) }
 
     func run() throws {
-        let request = try capture.request()
-        let options = capture
-        let duration = duration
+        let job = try ViewJob(capture: capture.request(), duration: duration)
         MainActor.assumeIsolated {
-            Runtime.run(window: true) {
-                let signals = SignalMonitor()
-                defer { signals.cancel() }
-                try await CaptureEngine.authorize(noInput: options.noInput)
-                let engine = try await Task.detached { try CaptureEngine(request: request) }.value
-                let mode = engine.selectedMode
-                let preview = try PreviewWindow(
-                    session: engine.session,
-                    resolution: Resolution(width: mode.outputWidth, height: mode.outputHeight),
-                    transform: request.transform, title: "hdcap: \(mode.device.name)"
-                )
-                defer { engine.stop(); preview.close() }
-                preview.show()
-                try await Runtime.start(engine, options: options)
-                signals.allowGracefulStop()
-                let reason = try await Runtime.wait(engine: engine, signals: signals, duration: duration, window: preview)
-                let cleanup = Watchdog(seconds: 10) { CaptureError("cleanup_timeout", "The capture session did not stop within 10 seconds.") }
-                defer { cleanup.cancel() }
-                engine.stop()
-                let result = ViewResult(capture: mode, statistics: engine.statistics, stoppedBy: reason)
-                try Output.result(result, command: "view") { "Stopped preview (\(reason))." }
-            }
+            Runtime.capture(job, command: "view", window: true) { "Stopped preview (\($0.stoppedBy))." }
         }
     }
 }
@@ -121,51 +98,10 @@ struct Record: ParsableCommand {
     func run() throws {
         let request = try capture.request()
         let url = try outputURL(path, extensions: ["mp4", "mov"], overwrite: overwrite)
-        let options = capture
-        let codec = codec
-        let bitrate = bitrate
-        let duration = duration
-        let overwrite = overwrite
+        let job = RecordJob(capture: request, path: url.path, codec: codec, bitrate: bitrate, duration: duration, overwrite: overwrite)
         MainActor.assumeIsolated {
-            Runtime.run {
-                let signals = SignalMonitor()
-                defer { signals.cancel() }
-                try await CaptureEngine.authorize(noInput: options.noInput)
-                let engine = try await Task.detached { try CaptureEngine(request: request) }.value
-                defer { engine.stop() }
-                let mode = engine.selectedMode
-                let recorder = try MovieRecorder(options: RecordingOptions(
-                    url: url, codec: codec,
-                    resolution: Resolution(width: mode.outputWidth, height: mode.outputHeight),
-                    frameRate: request.frameRate, bitrate: bitrate, overwrite: overwrite
-                ))
-                do {
-                    try await Runtime.start(engine, options: options) { recorder.append($0) }
-                    signals.allowGracefulStop()
-                    Output.notice("Recording \(codec.rawValue) to \(url.path). Press Ctrl-C to finish.")
-                    let reason = try await Runtime.wait(engine: engine, signals: signals, duration: duration, additionalFailure: { recorder.failure })
-                    let cleanup = Watchdog(seconds: 10) { CaptureError("cleanup_timeout", "Recording did not finish within 10 seconds.") }
-                    defer { cleanup.cancel() }
-                    engine.stop()
-                    if let failure = recorder.failure { throw failure }
-                    let movie = try await recorder.finish()
-                    try Output.result(RecordResult(capture: mode, movie: movie, statistics: engine.statistics, stoppedBy: reason), command: "record") {
-                        "Saved \(movie.path) (\(movie.framesWritten) frames, \(String(format: "%.2f", movie.duration)) seconds)."
-                    }
-                } catch {
-                    let cleanup = Watchdog(seconds: 10) { CaptureError("cleanup_timeout", "Recording cleanup did not finish within 10 seconds.") }
-                    defer { cleanup.cancel() }
-                    engine.stop()
-                    do {
-                        _ = try await recorder.finish()
-                    } catch let finalization as CaptureError {
-                        if let original = error as? CaptureError {
-                            throw CaptureError(original.code, original.message, details: original.details.merging(finalization.details) { original, _ in original })
-                        }
-                        throw finalization
-                    }
-                    throw error
-                }
+            Runtime.capture(job, command: "record") { result in
+                "Saved \(result.movie.path) (\(result.movie.framesWritten) frames, \(String(format: "%.2f", result.movie.duration)) seconds)."
             }
         }
     }
@@ -181,42 +117,9 @@ struct Screenshot: ParsableCommand {
     func run() throws {
         let request = try capture.request()
         let url = try outputURL(path, extensions: ["png"], overwrite: overwrite)
-        let options = capture
-        let overwrite = overwrite
+        let job = ScreenshotJob(capture: request, path: url.path, overwrite: overwrite)
         MainActor.assumeIsolated {
-            Runtime.run {
-                let signals = SignalMonitor()
-                defer { signals.cancel() }
-                try await CaptureEngine.authorize(noInput: options.noInput)
-                let engine = try await Task.detached { try CaptureEngine(request: request) }.value
-                defer { engine.stop() }
-                let frame = ScreenshotFrame()
-                try await Runtime.start(engine, options: options) { frame.receive($0) }
-                if signals.received != nil { throw CaptureError("interrupted", "Screenshot was interrupted.") }
-                engine.stop()
-                let image = try await Task.detached { try frame.write(to: url, overwrite: overwrite) }.value
-                let result = ScreenshotCompletion(capture: engine.selectedMode, image: image, statistics: engine.statistics)
-                try Output.result(result, command: "screenshot") { "Saved \(image.path) (\(image.width)x\(image.height))." }
-            }
+            Runtime.capture(job, command: "screenshot") { "Saved \($0.image.path) (\($0.image.width)x\($0.image.height))." }
         }
     }
-}
-
-private struct ViewResult: Encodable {
-    let capture: SelectedMode
-    let statistics: CaptureStatistics
-    let stoppedBy: String
-}
-
-private struct RecordResult: Encodable {
-    let capture: SelectedMode
-    let movie: RecordingResult
-    let statistics: CaptureStatistics
-    let stoppedBy: String
-}
-
-private struct ScreenshotCompletion: Encodable {
-    let capture: SelectedMode
-    let image: ScreenshotResult
-    let statistics: CaptureStatistics
 }

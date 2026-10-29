@@ -1,5 +1,4 @@
 import ArgumentParser
-import CryptoKit
 import Darwin
 import Foundation
 import HDCapture
@@ -12,7 +11,7 @@ struct Upgrade: ParsableCommand {
         let current = HDCap.configuration.version
         MainActor.assumeIsolated {
             Runtime.run {
-                let watchdog = Watchdog(seconds: 600) { CaptureError("upgrade_timeout", "Upgrade did not finish within 10 minutes.") }
+                let watchdog = Watchdog(seconds: 600) { Darwin.exit(Output.error(CaptureError("upgrade_timeout", "Upgrade did not finish within 10 minutes."))) }
                 defer { watchdog.cancel() }
                 let result = try await Task.detached { try await UpgradeInstaller.perform(current: current) }.value
                 try Output.result(result, command: "upgrade") {
@@ -32,8 +31,6 @@ private struct UpgradeResult: Encodable, Sendable {
 }
 
 private enum UpgradeInstaller {
-    static let repository = "https://github.com/sadiksaifi/hdcap"
-
     static func perform(current: String) async throws -> UpgradeResult {
         let path = try executableURL()
         let bin = path.deletingLastPathComponent()
@@ -60,12 +57,10 @@ private enum UpgradeInstaller {
             throw CaptureError("development_build", "Install an official release before using upgrade.")
         }
 
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.timeoutIntervalForRequest = 30
-        configuration.timeoutIntervalForResource = 120
-        let session = URLSession(configuration: configuration)
+        let session = ReleaseAssets.session()
         defer { session.invalidateAndCancel() }
-        let metadata = try await download(URL(string: "https://api.github.com/repos/sadiksaifi/hdcap/releases/latest")!, session: session)
+        let metadata = try await ReleaseAssets.download(URL(string: "https://api.github.com/repos/sadiksaifi/hdcap/releases/latest")!,
+                                                        session: session, failure: "upgrade_failed")
         let release = try JSONDecoder().decode(Release.self, from: metadata)
         let latest = try StableVersion(release.tag_name)
         guard !release.draft, !release.prerelease, release.tag_name == "v\(latest.description)" else {
@@ -75,20 +70,10 @@ private enum UpgradeInstaller {
             return UpgradeResult(method: "curl", previousVersion: current, version: current,
                                  updated: false, path: path.path)
         }
-        let base = "\(repository)/releases/download/\(release.tag_name)"
-        let script = try await download(URL(string: "\(base)/install.sh")!, session: session)
-        let checksums = try await download(URL(string: "\(base)/checksums.txt")!, session: session)
-        guard let checksumText = String(data: checksums, encoding: .utf8) else {
-            throw CaptureError("invalid_checksum", "The release checksum file is not UTF-8.")
-        }
-        let matches = checksumText.split(whereSeparator: \.isNewline).compactMap { line -> String? in
-            let fields = line.split(whereSeparator: \.isWhitespace)
-            return fields.count == 2 && fields[1] == "install.sh" ? String(fields[0]) : nil
-        }
-        let digest = SHA256.hash(data: script).map { String(format: "%02x", $0) }.joined()
-        guard matches.count == 1, matches[0] == digest else {
-            throw CaptureError("checksum_mismatch", "The release installer failed SHA-256 verification.")
-        }
+        let base = ReleaseAssets.base(tag: release.tag_name)
+        let script = try await ReleaseAssets.download(base.appending(path: "install.sh"), session: session, failure: "upgrade_failed")
+        let checksums = try await ReleaseAssets.download(base.appending(path: "checksums.txt"), session: session, failure: "upgrade_failed")
+        try ReleaseAssets.verify(script, named: "install.sh", checksums: checksums)
         let temporary = FileManager.default.temporaryDirectory.appendingPathComponent("hdcap-upgrade-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: false,
                                                 attributes: [.posixPermissions: 0o700])
@@ -143,39 +128,9 @@ private enum UpgradeInstaller {
         return String(decoding: bytes, as: UTF8.self)
     }
 
-    private static func download(_ url: URL, session: URLSession) async throws -> Data {
-        var request = URLRequest(url: url)
-        request.setValue("hdcap", forHTTPHeaderField: "User-Agent")
-        let (data, response) = try await session.data(for: request)
-        guard let response = response as? HTTPURLResponse, response.statusCode == 200,
-              response.url?.scheme == "https" else {
-            throw CaptureError("upgrade_failed", "Cannot download a stable hdcap release.")
-        }
-        return data
-    }
-
     private struct Release: Decodable {
         let tag_name: String
         let draft: Bool
         let prerelease: Bool
     }
-}
-
-private struct StableVersion: Comparable, CustomStringConvertible {
-    let components: [Int]
-
-    init(_ text: String) throws {
-        let value = text.hasPrefix("v") ? String(text.dropFirst()) : text
-        let fields = value.split(separator: ".", omittingEmptySubsequences: false)
-        guard fields.count == 3, fields.allSatisfy({ field in
-            !field.isEmpty && field.allSatisfy(\.isASCII) && field.allSatisfy(\.isNumber) &&
-            (field.count == 1 || field.first != "0") && Int(field) != nil
-        }) else {
-            throw CaptureError("invalid_release", "Upgrade requires a stable semantic version.")
-        }
-        components = fields.map { Int($0)! }
-    }
-
-    var description: String { components.map(String.init).joined(separator: ".") }
-    static func < (lhs: Self, rhs: Self) -> Bool { lhs.components.lexicographicallyPrecedes(rhs.components) }
 }

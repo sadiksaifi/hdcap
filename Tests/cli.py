@@ -61,8 +61,9 @@ class CLIContract(unittest.TestCase):
         self.assertEqual(envelope["command"], "schema")
         schema = envelope["data"]
         self.assertEqual(schema["$schema"], "https://json-schema.org/draft/2020-12/schema")
-        self.assertEqual(set(schema["properties"]["command"]["enum"]), {"hdcap", "devices", "modes", "view", "record", "screenshot", "schema", "upgrade"})
+        self.assertEqual(set(schema["properties"]["command"]["enum"]), {"hdcap", "devices", "modes", "view", "record", "screenshot", "setup", "schema", "upgrade"})
         self.assertIn("error", schema["$defs"])
+        self.assertEqual(set(schema["$defs"]["setup"]["properties"]["cameraAuthorization"]["enum"]), {"authorized", "not_determined", "denied", "restricted"})
         self.assertIn("frameRate", schema["$defs"])
 
     def test_help_and_version_are_clean_exits(self):
