@@ -48,8 +48,10 @@ struct Schema: ParsableCommand {
           "id": {"type": "string"}, "index": {"type": "integer"}, "width": {"type": "integer", "minimum": 1}, "height": {"type": "integer", "minimum": 1},
           "pixelFormat": {"type": "string"}, "recommended": {"type": "boolean"}, "frameRateRanges": {"type": "array", "items": {"type": "object", "required": ["min", "max"], "properties": {"min": {"type": "number"}, "max": {"type": "number"}}}}
         }},
-        "capture": {"type": "object", "required": ["device", "mode", "frameRate", "outputWidth", "outputHeight", "rotation", "mirrored"], "properties": {
+        "capture": {"type": "object", "required": ["device", "mode", "frameRate", "actualFrameRate", "effectiveFrameDuration", "outputWidth", "outputHeight", "rotation", "mirrored"], "properties": {
           "device": {"$ref": "#/$defs/device"}, "mode": {"$ref": "#/$defs/mode"}, "frameRate": {"$ref": "#/$defs/frameRate"},
+          "actualFrameRate": {"type": "number", "exclusiveMinimum": 0},
+          "effectiveFrameDuration": {"type": "object", "required": ["value", "timescale"], "properties": {"value": {"type": "integer", "minimum": 1}, "timescale": {"type": "integer", "minimum": 1}}},
           "outputWidth": {"type": "integer", "minimum": 1}, "outputHeight": {"type": "integer", "minimum": 1}, "rotation": {"enum": [0, 90, 180, 270]}, "mirrored": {"type": "boolean"}
         }},
         "statistics": {"type": "object", "required": ["framesReceived", "framesDropped", "measuredFPS", "firstFrameReceived", "elapsedSeconds"], "properties": {

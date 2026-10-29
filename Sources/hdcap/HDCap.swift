@@ -50,7 +50,7 @@ struct Modes: ParsableCommand {
         try Output.result(modes, command: "modes") {
             table(["RESOLUTION", "PIXEL FORMAT", "FPS", "PREFERRED"], rows: modes.map { mode in
                 let ranges = mode.frameRateRanges.map { range in
-                    range.min == range.max ? String(format: "%.3g", range.max) : String(format: "%.3g-%.3g", range.min, range.max)
+                    range.min == range.max ? String(format: "%.6g", range.max) : String(format: "%.6g-%.6g", range.min, range.max)
                 }.joined(separator: ", ")
                 return ["\(mode.width)x\(mode.height)", mode.pixelFormat, ranges, mode.recommended ? "yes" : ""]
             })

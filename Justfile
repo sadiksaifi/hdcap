@@ -1,4 +1,5 @@
 set shell := ["zsh", "-euo", "pipefail", "-c"]
+set positional-arguments
 
 # Show development commands.
 default:
@@ -6,22 +7,23 @@ default:
 
 # Build the optimized CLI.
 build:
-    swift build -c release
+    swift build -c release >&2
 
 # Build with debug symbols.
 dev:
     swift build
 
 # Run tests without capture hardware.
-test:
+test: dev
     swift test
+    python3 Tests/cli.py .build/debug/hdcap
 
 # Run tests and build the release binary.
 check: test build
 
 # Run the optimized CLI, for example: just run devices --json.
 run *args: build
-    .build/release/hdcap {{args}}
+    .build/release/hdcap "$@"
 
 # List connected video capture devices.
 devices: build
@@ -44,6 +46,18 @@ smoke device="USB Video": build
     for codec in h264 hevc; do
         "$binary" record "artifacts/smoke/$codec.mp4" --device {{quote(device)}} --resolution 1280x720 --fps 60 --codec "$codec" --duration 5 --overwrite --no-input --json
     done
+
+# Request terminal camera permission, then exercise the connected device.
+hardware-check device="USB Video": build
+    #!/usr/bin/env bash
+    set -euo pipefail
+    mkdir -p artifacts/smoke
+    binary=.build/release/hdcap
+    "$binary" screenshot artifacts/smoke/permission.png --device {{quote(device)}} --resolution 1280x720 --fps 60 --overwrite --json > artifacts/smoke/permission.json
+    just smoke {{quote(device)}}
+    "$binary" record artifacts/smoke/sustained.mp4 --device {{quote(device)}} --resolution 1280x720 --fps 60 --codec hevc --duration 30 --overwrite --no-input --json > artifacts/smoke/sustained.json
+    "$binary" view --device {{quote(device)}} --resolution 1280x720 --fps 60 --duration 3 --no-input --json > artifacts/smoke/view.json
+    echo "Hardware results saved in artifacts/smoke."
 
 # Install the release executable into a user-owned directory.
 install prefix=(env("HOME") / ".local"): build

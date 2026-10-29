@@ -52,6 +52,8 @@ Close the preview window or press Ctrl-C to stop. A recording stopped with Ctrl-
 
 Capture commands require both `--resolution` and `--fps`. Unsupported combinations fail with an error. Frame rates accept integers, decimals, or fractions. Common rates such as `59.94` map to `60000/1001`.
 
+UVC devices can advertise nominal 60 fps as 60.00024 because their frame intervals use 100 ns ticks. hdcap accepts this rounding and uses the exact advertised interval. JSON reports the requested `frameRate`, native `actualFrameRate`, and `effectiveFrameDuration` separately. It does not treat 59.94 and 60 as interchangeable.
+
 Add `--rotate 90`, `--rotate 180`, or `--rotate 270` for clockwise rotation. Add `--flip horizontal`, `--flip vertical`, or `--flip both` to flip the result after rotation. Preview, recordings, and screenshots use the same transform. A quarter turn swaps the output dimensions.
 
 Recording defaults to H.264. Use `--codec hevc` for HEVC and `--bitrate 12000000` to set bits per second. Files must end in `.mp4` or `.mov`. The encoder must support hardware encoding; hdcap fails instead of falling back to software. Recording is video only. Audio is not captured.
@@ -97,4 +99,6 @@ hdcap --generate-completion-script zsh
 
 ## Verify
 
-`just check` builds the executable and checks CLI contracts without opening a capture device. Hardware verification should exercise a full-rate mode, rotated and flipped output, both video codecs, an interrupted recording, and PNG dimensions. Check the result statistics and inspect the saved image or movie; successful command completion alone does not establish frame rate or image orientation.
+`just check` builds the executable, tests hardware encoding with generated frames, and checks CLI contracts without opening a capture device. Run `just hardware-check` from a terminal with camera support to request permission and exercise the connected `USB Video` dongle. It saves PNGs, both video codecs, a 30-second recording, and preview statistics in `artifacts/smoke`.
+
+Hardware verification should also exercise an interrupted recording and every rotate/flip combination. Check the result statistics and inspect the saved image or movie; successful command completion alone does not establish frame rate or image orientation.

@@ -83,8 +83,7 @@ final class SignalMonitor: @unchecked Sendable {
                     return force
                 }
                 if force {
-                    _ = Output.error(CaptureError("interrupted", "Capture was interrupted.", details: ["signal": String(number)]))
-                    Darwin.exit(128 + number)
+                    Darwin.exit(Output.error(CaptureError("interrupted", "Capture was interrupted.", details: ["signal": String(number)])))
                 }
             }
             source.resume()
