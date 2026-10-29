@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "hdcap",
-    platforms: [.macOS("27.0")],
+    platforms: [.macOS("26.0")],
     products: [
         .executable(name: "hdcap", targets: ["hdcap"]),
         .library(name: "HDCapture", targets: ["HDCapture"]),

@@ -12,8 +12,8 @@ hdcap captures video from HDMI and UVC devices on Apple silicon Macs.
 
 ## Requirements
 
-- An Apple silicon Mac running macOS 27 or later.
-- Xcode with the macOS 27 SDK and [just](https://github.com/casey/just) to build it.
+- An Apple silicon Mac running macOS 26 or later.
+- Xcode with the macOS 26 SDK or later and [just](https://github.com/casey/just) to build it.
 
 ## Install
 
