@@ -12,3 +12,5 @@ hdcap view --device "USB Video" --resolution 1280x720 --fps 60
 ```
 
 Start with `hdcap --help` for commands and `just` for development tasks.
+
+Copyright 2026 Sadik Saifi. Licensed under [GPL-3.0-only](LICENSE).
