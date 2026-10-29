@@ -29,11 +29,8 @@ public final class PreviewWindow: NSObject, NSWindowDelegate {
             preview.session = nil
             throw CaptureError("preview_unavailable", "The capture session has no video connection for preview.")
         }
-        var rotation = transform.rotation
-        if transform.flip == .vertical || transform.flip == .both {
-            rotation = (rotation + 180) % 360
-        }
-        let mirrored = transform.flip == .horizontal || transform.flip == .vertical
+        let rotation = transform.nativeRotation
+        let mirrored = transform.nativeMirrored
         guard connection.isVideoRotationAngleSupported(CGFloat(rotation)),
               !mirrored || connection.isVideoMirroringSupported else {
             preview.session = nil
